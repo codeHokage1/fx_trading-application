@@ -185,13 +185,15 @@ Full request/response schemas are in Swagger at `/api/docs`.
 
 The system has two roles: `user` (default) and `admin`. The role is embedded in the JWT at login — no extra DB call on each request.
 
-To promote a user to admin, update their `role` column directly:
+**Every new account is assigned `user` on signup.** There is no API endpoint for role promotion by design — granting admin access requires a direct database change by someone who already has DB access:
 
 ```sql
 UPDATE users SET role = 'admin' WHERE email = 'admin@example.com';
 ```
 
-Admin routes are guarded by `RolesGuard` and return `403 Forbidden` for non-admin tokens.
+This is intentional. Exposing a role-promotion endpoint would be a security risk. Admin access is an ops-level action, not a product-level one.
+
+Admin routes return `403 Forbidden` for any token without the `admin` role.
 
 ---
 
