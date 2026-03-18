@@ -17,6 +17,7 @@ export class FxService {
   private readonly logger = new Logger(FxService.name);
   private readonly CACHE_KEY = 'fx:rates';
   private lastKnownRates: RateMap | null = null; // fallback if API fails
+  private lastKnownRatesAt = 0;
 
   constructor(
     private readonly config: ConfigService,
@@ -48,7 +49,14 @@ export class FxService {
     const ttl = this.config.get<number>('app.fxCacheTtl');
 
     try {
-      const res = await fetch(`${baseUrl}/${apiKey}/latest/USD`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      let res: Response;
+      try {
+        res = await fetch(`${baseUrl}/${apiKey}/latest/USD`, { signal: controller.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       if (!res.ok) throw new Error(`FX API responded with ${res.status}`);
 
       const json = await res.json() as { conversion_rates: Record<string, number> };
@@ -57,13 +65,14 @@ export class FxService {
       const data: RateMap = { base: 'USD', rates, fetchedAt: new Date().toISOString() };
       await this.cache.set(this.CACHE_KEY, data, ttl ?? 300);
       this.lastKnownRates = data;
+      this.lastKnownRatesAt = Date.now();
 
       return data;
     } catch (err) {
       this.logger.error('FX API fetch failed', err);
 
-      // Return last known rates if available
-      if (this.lastKnownRates) {
+      // Return last known rates if available and less than 1 hour old
+      if (this.lastKnownRates && Date.now() - this.lastKnownRatesAt < 60 * 60 * 1000) {
         this.logger.warn('Using stale FX rates as fallback');
         return this.lastKnownRates;
       }

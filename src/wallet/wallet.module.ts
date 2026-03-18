@@ -5,7 +5,6 @@ import { WalletService } from './wallet.service';
 import { WalletController } from './wallet.controller';
 import { FxModule } from '../fx/fx.module';
 import { TransactionsModule } from '../transactions/transactions.module';
-import { UsersModule } from '../users/users.module';
 import { VerifiedGuard } from '../common/guards/verified.guard';
 
 @Module({
@@ -13,7 +12,6 @@ import { VerifiedGuard } from '../common/guards/verified.guard';
     TypeOrmModule.forFeature([Wallet]),
     FxModule,
     TransactionsModule,
-    UsersModule,
   ],
   providers: [WalletService, VerifiedGuard],
   controllers: [WalletController],

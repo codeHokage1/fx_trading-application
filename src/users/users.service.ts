@@ -10,11 +10,12 @@ export class UsersService {
   ) {}
 
   create(data: Partial<User>): Promise<User> {
+    data.email = data.email?.toLowerCase();
     return this.repo.save(this.repo.create(data));
   }
 
   findByEmail(email: string): Promise<User | null> {
-    return this.repo.findOne({ where: { email } });
+    return this.repo.findOne({ where: { email: email.toLowerCase() } });
   }
 
   findById(id: string): Promise<User | null> {

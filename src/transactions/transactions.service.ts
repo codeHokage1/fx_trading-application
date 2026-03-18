@@ -28,11 +28,14 @@ export class TransactionsService {
     }));
   }
 
-  findByUser(userId: string): Promise<Transaction[]> {
-    return this.repo.find({
+  async findByUser(userId: string, page = 1, limit = 20): Promise<{ data: Transaction[]; total: number; page: number; limit: number }> {
+    const [data, total] = await this.repo.findAndCount({
       where: { userId },
       order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
     });
+    return { data, total, page, limit };
   }
 
   findByIdempotencyKey(key: string): Promise<Transaction | null> {

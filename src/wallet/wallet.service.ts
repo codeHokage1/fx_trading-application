@@ -137,8 +137,8 @@ export class WalletService {
 
   async trade(userId: string, dto: TradeDto): Promise<Wallet> {
     // Trade enforces NGN must be one side of the pair
-    const involvesSNGN = dto.fromCurrency === 'NGN' || dto.toCurrency === 'NGN';
-    if (!involvesSNGN) {
+    const involvesNGN = dto.fromCurrency === 'NGN' || dto.toCurrency === 'NGN';
+    if (!involvesNGN) {
       throw new BadRequestException('Trade must involve NGN on one side');
     }
 

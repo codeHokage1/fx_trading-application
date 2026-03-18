@@ -1,9 +1,10 @@
 import {
-  Injectable, BadRequestException, UnauthorizedException, ConflictException,
+  Injectable, BadRequestException, UnauthorizedException, ConflictException, NotFoundException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
+import { randomInt } from 'crypto';
 import { UsersService } from '../users/users.service';
 import { MailService } from '../mail/mail.service';
 import { WalletService } from '../wallet/wallet.service';
@@ -22,6 +23,7 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto) {
+    dto.email = dto.email.toLowerCase();
     const existing = await this.users.findByEmail(dto.email);
     if (existing) throw new ConflictException('Email already registered');
 
@@ -48,7 +50,7 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const user = await this.users.findByEmail(dto.email);
+    const user = await this.users.findByEmail(dto.email.toLowerCase());
     if (!user) throw new UnauthorizedException('Invalid credentials');
 
     const valid = await bcrypt.compare(dto.password, user.password);
@@ -56,12 +58,24 @@ export class AuthService {
 
     if (!user.isVerified) throw new UnauthorizedException('Please verify your email first');
 
-    const token = this.jwt.sign({ sub: user.id, email: user.email });
+    const token = this.jwt.sign({ sub: user.id, email: user.email, isVerified: user.isVerified });
     return { accessToken: token };
   }
 
+  async resendOtp(email: string) {
+    const user = await this.users.findByEmail(email.toLowerCase());
+    if (!user) throw new NotFoundException('User not found');
+    if (user.isVerified) throw new BadRequestException('Account already verified');
+
+    const otp = this.generateOtp();
+    const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    await this.users.update(user.id, { otp, otpExpiresAt });
+    await this.mail.sendOtp(user.email, otp);
+    return { message: 'OTP resent. Check your email.' };
+  }
+
   private generateOtp(): string {
-    // 6-digit numeric OTP
-    return Math.floor(100000 + Math.random() * 900000).toString();
+    // 6-digit numeric OTP using cryptographically secure randomInt
+    return randomInt(100000, 999999).toString();
   }
 }

@@ -75,3 +75,19 @@ export const LoginSwagger = () =>
       schema: { example: { statusCode: 401, message: 'Invalid credentials', error: 'Unauthorized' } },
     }),
   );
+
+export const ResendOtpSwagger = () =>
+  applyDecorators(
+    ApiOperation({
+      summary: 'Resend OTP',
+      description: 'Request a fresh OTP if the previous one expired. Rate-limited to 5 requests per minute.',
+    }),
+    ApiResponse({
+      status: 200,
+      description: 'OTP resent',
+      schema: { example: { success: true, data: { message: 'OTP resent. Check your email.' } } },
+    }),
+    ApiResponse({ status: 400, description: 'Account already verified' }),
+    ApiResponse({ status: 404, description: 'User not found' }),
+    ApiResponse({ status: 429, description: 'Too many requests', schema: { example: { statusCode: 429, message: 'ThrottlerException: Too Many Requests' } } }),
+  );

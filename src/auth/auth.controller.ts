@@ -4,7 +4,8 @@ import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { LoginDto } from './dto/login.dto';
-import { LoginSwagger, RegisterSwagger, VerifyOtpSwagger } from './auth.swagger';
+import { ResendOtpDto } from './dto/resend-otp.dto';
+import { LoginSwagger, RegisterSwagger, ResendOtpSwagger, VerifyOtpSwagger } from './auth.swagger';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -29,5 +30,12 @@ export class AuthController {
   @LoginSwagger()
   login(@Body() dto: LoginDto) {
     return this.auth.login(dto);
+  }
+
+  @Post('resend-otp')
+  @HttpCode(HttpStatus.OK)
+  @ResendOtpSwagger()
+  resendOtp(@Body() dto: ResendOtpDto) {
+    return this.auth.resendOtp(dto.email);
   }
 }
