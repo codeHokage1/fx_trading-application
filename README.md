@@ -72,6 +72,43 @@ npm run build        # compile only
 
 ---
 
+## Database
+
+### Migrations
+
+In development, `synchronize: true` keeps the schema in sync automatically. For production, use migrations.
+
+```bash
+# Generate a migration after changing an entity
+npm run migration:generate -- src/migrations/MigrationName
+
+# Apply pending migrations
+npm run migration:run
+
+# Roll back the last migration
+npm run migration:revert
+
+# List applied and pending migrations
+npm run migration:show
+```
+
+Migration files are generated into `src/migrations/` and should be committed to version control.
+
+### Visualization
+
+TypeORM doesn't ship with a built-in database browser. Connect any standard PostgreSQL client to `localhost:5432`:
+
+| Tool | Notes |
+|---|---|
+| **pgAdmin 4** | Ships with PostgreSQL — already available if you installed Postgres locally |
+| **TablePlus** | Clean native app for macOS/Windows, free tier is sufficient |
+| **DBeaver** | Cross-platform, fully free |
+| **VS Code** | Install the "Database Client" extension and connect directly from the editor |
+
+> **Note:** If a built-in visual browser is a hard requirement, [Prisma ORM](https://www.prisma.io) is worth considering as an alternative to TypeORM — it ships with Prisma Studio (`npx prisma studio`), a zero-config table browser at `localhost:5555`. This project uses TypeORM for its maturity and flexibility with complex query builders.
+
+---
+
 ## Environment Variables
 
 | Variable | Required | Default | Description |
@@ -107,7 +144,7 @@ All routes are prefixed with `/v1`. Protected routes require `Authorization: Bea
 | POST | `/v1/auth/register` | — | Register and send OTP to email |
 | POST | `/v1/auth/verify` | — | Verify OTP, activate account |
 | POST | `/v1/auth/login` | — | Login, returns JWT |
-| POST | `/v1/auth/resend-otp` | — | Request a new OTP (rate-limited) |
+| POST | `/v1/auth/resend-otp` | — | Request a new OTP if previous expired (rate-limited) |
 
 ### Wallet
 
@@ -128,9 +165,33 @@ All routes are prefixed with `/v1`. Protected routes require `Authorization: Bea
 
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
-| GET | `/v1/transactions` | JWT + verified | Paginated transaction history |
+| GET | `/v1/transactions?page=1&limit=20` | JWT + verified | Paginated transaction history |
 
-Full request/response schemas are available in Swagger at `/api/docs`.
+### Admin
+
+Admin endpoints require a user with `role: admin`. See [Roles](#roles) below.
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| GET | `/v1/admin/analytics` | JWT + admin | Platform overview — user counts, volumes, top users |
+| GET | `/v1/admin/users?page=1&limit=20` | JWT + admin | All users paginated |
+| GET | `/v1/admin/transactions?page=1&limit=20&type=trade` | JWT + admin | All transactions, filterable by type |
+
+Full request/response schemas are in Swagger at `/api/docs`.
+
+---
+
+## Roles
+
+The system has two roles: `user` (default) and `admin`. The role is embedded in the JWT at login — no extra DB call on each request.
+
+To promote a user to admin, update their `role` column directly:
+
+```sql
+UPDATE users SET role = 'admin' WHERE email = 'admin@example.com';
+```
+
+Admin routes are guarded by `RolesGuard` and return `403 Forbidden` for non-admin tokens.
 
 ---
 
@@ -138,7 +199,7 @@ Full request/response schemas are available in Swagger at `/api/docs`.
 
 ### Multi-currency wallets
 
-Each currency balance is a separate row in the `wallets` table keyed on `(user_id, currency)`. Adding a new currency requires no schema changes — only a constant update.
+Each currency balance is a separate row in the `wallets` table keyed on `(user_id, currency)`. Adding a new currency requires no schema changes — only appending to the `SUPPORTED_CURRENCIES` constant.
 
 ### Double-spend prevention
 
@@ -150,32 +211,36 @@ Rates are fetched from exchangerate-api.com and cached in Redis (or in-memory if
 
 ### `convert` vs `trade`
 
-Both deduct one currency and credit another at real-time rates. `trade` enforces that NGN must be one side of the pair (NGN ↔ foreign). `convert` is unrestricted. Both operation types are recorded separately in transaction history for analytics purposes.
+Both deduct one currency and credit another at real-time rates. `trade` enforces NGN on one side of the pair. `convert` is unrestricted. Both are recorded separately in transaction history.
 
 ### Idempotency
 
 All mutating wallet endpoints accept an optional `idempotencyKey`. Submitting the same key twice returns the original result without re-executing the operation.
 
-### Email verification gate
+### Auth & verification gate
 
-After registration, users receive a 6-digit OTP by email. Only verified accounts can access wallet and trading endpoints. The `isVerified` flag is embedded in the JWT payload to avoid a database round-trip on every request.
+After registration, users receive a 6-digit OTP by email (generated with `crypto.randomInt` — not `Math.random`). Only verified accounts access wallet and trading endpoints. `isVerified` and `role` are embedded in the JWT payload to avoid DB lookups on every request.
+
+### RBAC
+
+Role-based access uses a `RolesGuard` that reads the `role` claim from the JWT. The `@Roles()` decorator is applied at the controller or handler level. Currently two roles exist: `user` and `admin`.
 
 ---
 
 ## Key Assumptions
 
-- **Wallet funding is simulated.** No payment gateway is integrated. In production, funding would integrate with a provider like Paystack: initiate a charge, confirm via webhook, and credit only on a confirmed payment event — with idempotency on the payment reference.
-- **Supported currencies are fixed** at NGN, USD, EUR, GBP, CAD, JPY. Adding a new currency requires only appending it to the `SUPPORTED_CURRENCIES` constant in `fx.service.ts`.
-- **FX cross-rates use USD as the base.** NGN/EUR, for example, is computed as `rates['EUR'] / rates['NGN']`.
-- **OTPs expire in 10 minutes** and are single-use. Calling the resend endpoint invalidates any previous OTP.
+- **Wallet funding is simulated.** No payment gateway is integrated. In production, this would integrate with a provider like Paystack: initiate a charge, confirm via webhook, and credit only on a confirmed payment event with idempotency on the payment reference.
+- **Supported currencies are fixed** at NGN, USD, EUR, GBP, CAD, JPY. Adding a new one requires only appending to `SUPPORTED_CURRENCIES` in `fx.service.ts`.
+- **FX cross-rates use USD as the base.** NGN/EUR is computed as `rates['EUR'] / rates['NGN']`.
+- **OTPs expire in 10 minutes** and are single-use. Calling resend-otp invalidates any previous OTP.
 - **New users start with 1,000 NGN** (configurable via `INITIAL_NGN_BALANCE`).
-- **Schema auto-sync** (`synchronize: true`) is enabled in development only. Use migrations in production.
+- **Schema auto-sync** (`synchronize: true`) is on in development only. Run migrations in production.
 
 ---
 
 ## Scaling Considerations
 
-- Redis is already abstracted as the cache layer. Ensuring Redis is available in production eliminates the in-memory fallback and enables cache sharing across multiple app instances.
-- The wallet locking strategy handles high concurrency per user. Cross-user contention is negligible by design — each user's wallets are independent.
-- The FX service is stateless and cacheable. A single shared Redis instance across app instances guarantees rate consistency.
-- For large user volumes: partition `wallets` and `transactions` by `user_id`, add read replicas for history queries, and move FX rate fetching to a dedicated background worker.
+- Redis is abstracted behind a `CacheService`. Ensuring Redis availability in production removes the in-memory fallback and enables consistent cache sharing across instances.
+- The wallet locking strategy handles high per-user concurrency. Cross-user contention is negligible — each user's wallets are independent rows.
+- The FX service is stateless and cache-driven. A shared Redis instance across app instances ensures all nodes use the same rates.
+- For large scale: partition `wallets` and `transactions` by `user_id`, add read replicas for history and analytics queries, and move FX rate fetching to a dedicated background worker.

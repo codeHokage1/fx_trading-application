@@ -13,6 +13,7 @@ import { CacheModule } from './cache/cache.module';
 import { FxModule } from './fx/fx.module';
 import { WalletModule } from './wallet/wallet.module';
 import { TransactionsModule } from './transactions/transactions.module';
+import { AdminModule } from './admin/admin.module';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 
@@ -54,6 +55,7 @@ import { ResponseInterceptor } from './common/interceptors/response.interceptor'
     FxModule,
     WalletModule,
     TransactionsModule,
+    AdminModule,
   ],
   providers: [
     // registered via DI so filters/interceptors can inject services like Logger

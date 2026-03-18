@@ -58,7 +58,7 @@ export class AuthService {
 
     if (!user.isVerified) throw new UnauthorizedException('Please verify your email first');
 
-    const token = this.jwt.sign({ sub: user.id, email: user.email, isVerified: user.isVerified });
+    const token = this.jwt.sign({ sub: user.id, email: user.email, isVerified: user.isVerified, role: user.role });
     return { accessToken: token };
   }
 

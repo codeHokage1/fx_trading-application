@@ -9,6 +9,8 @@ export default registerAs('database', (): TypeOrmModuleOptions => ({
   password: process.env.DB_PASS || 'postgres',
   database: process.env.DB_NAME || 'fx_trading',
   entities: [__dirname + '/../**/*.entity{.ts,.js}'],
+  migrations: [__dirname + '/../migrations/*{.ts,.js}'],
+  migrationsRun: false,
   synchronize: process.env.NODE_ENV !== 'production',
   logging: process.env.NODE_ENV === 'development',
 }));
