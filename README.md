@@ -133,6 +133,133 @@ TypeORM doesn't ship with a built-in database browser. Connect any standard Post
 
 ---
 
+## Flow Diagrams
+
+### 1. Auth & Onboarding
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant A as AuthController
+    participant S as AuthService
+    participant DB as PostgreSQL
+    participant M as Resend (Email)
+    participant W as WalletService
+
+    C->>A: POST /v1/auth/register { email, password }
+    A->>S: register(dto)
+    S->>DB: findByEmail(email)
+    DB-->>S: null (not found)
+    S->>S: bcrypt.hash(password)
+    S->>S: crypto.randomInt() → OTP
+    S->>DB: INSERT users (email, password, otp, otpExpiresAt)
+    DB-->>S: user
+    S->>W: initializeWallet(userId)
+    W->>DB: INSERT wallets (NGN, balance: 1000)
+    S->>M: sendOtp(email, otp)
+    M-->>S: { data: { id }, error: null }
+    S-->>C: 201 { message: "Check your email for the OTP" }
+
+    Note over C,M: User receives OTP email (expires in 10 min)
+
+    C->>A: POST /v1/auth/verify { email, otp }
+    A->>S: verifyOtp(dto)
+    S->>DB: findByEmail(email)
+    DB-->>S: user
+    S->>S: validate OTP match + expiry
+    S->>DB: UPDATE users SET is_verified=true, otp=null
+    S-->>C: 200 { message: "Email verified successfully" }
+
+    C->>A: POST /v1/auth/login { email, password }
+    A->>S: login(dto)
+    S->>DB: findByEmail(email)
+    S->>S: bcrypt.compare(password, hash)
+    S->>S: jwt.sign({ sub, email, isVerified, role })
+    S-->>C: 200 { accessToken: "eyJ..." }
+```
+
+---
+
+### 2. Wallet Management
+
+```mermaid
+flowchart TD
+    A([User Registers]) --> B[initializeWallet]
+    B --> C[(INSERT wallets\nNGN · balance: 1000)]
+
+    D([POST /wallet/fund]) --> E{idempotencyKey\nprovided?}
+    E -- Yes --> F{Key exists\nin transactions?}
+    F -- Yes --> G[Return 409 Conflict]
+    F -- No --> H
+    E -- No --> H[BEGIN TRANSACTION]
+    H --> I[SELECT wallet FOR UPDATE\nwhere userId + NGN]
+    I --> J{Wallet\nexists?}
+    J -- No --> K[Create NGN wallet\nbalance: 0]
+    J -- Yes --> L
+    K --> L[balance = Decimal balance + amount]
+    L --> M[(UPDATE wallets)]
+    M --> N[(INSERT transactions\ntype: fund · status: success)]
+    N --> O[COMMIT]
+    O --> P([Return updated wallet])
+
+    Q([POST /wallet/convert\nor /wallet/trade]) --> R{NGN involved?\ntrade only}
+    R -- No → trade --> S[Return 400]
+    R -- Yes / convert --> T{idempotencyKey\nduplicate?}
+    T -- Yes --> U[Return 409]
+    T -- No --> V[Fetch FX rate]
+    V --> W[toAmount = amount × rate\nvia Decimal.js]
+    W --> X[BEGIN TRANSACTION]
+    X --> Y[SELECT fromWallet FOR UPDATE]
+    Y --> Z{Sufficient\nbalance?}
+    Z -- No --> AA[ROLLBACK → 400]
+    Z -- Yes --> AB[Deduct fromWallet]
+    AB --> AC[SELECT toWallet FOR UPDATE]
+    AC --> AD{toWallet\nexists?}
+    AD -- No --> AE[Create toWallet\nbalance: 0]
+    AD -- Yes --> AF
+    AE --> AF[Credit toWallet]
+    AF --> AG[(UPDATE both wallets)]
+    AG --> AH[(INSERT transaction\ntype: convert/trade)]
+    AH --> AI[COMMIT]
+    AI --> AJ([Return credited wallet])
+```
+
+---
+
+### 3. Currency Exchange (FX Rate Handling)
+
+```mermaid
+flowchart TD
+    A([Trade or Convert Request]) --> B[FxService.getRate\nfromCurrency · toCurrency]
+    B --> C[FxService.getRates]
+    C --> D{Cache hit?\nRedis or in-memory}
+    D -- Hit --> E[Return cached RateMap\nbase: USD]
+    D -- Miss --> F[fetchAndCache]
+
+    F --> G[AbortController\n5s timeout]
+    G --> H[fetch exchangerate-api.com\n/latest/USD]
+    H --> I{API\nresponse OK?}
+
+    I -- Success --> J[Parse conversion_rates]
+    J --> K[(Cache RateMap\nTTL: 5 min)]
+    K --> L[Update lastKnownRates\n+ lastKnownRatesAt]
+    L --> E
+
+    I -- Failure / Timeout --> M{lastKnownRates\nexists?}
+    M -- Yes --> N{Age <\n1 hour?}
+    N -- Yes --> O[⚠️ Log warning:\nUsing stale rates]
+    O --> E
+    N -- No --> P[Throw 503\nFX rates unavailable]
+    M -- No --> P
+
+    E --> Q[cross-rate =\nrates to / rates from]
+    Q --> R([Return rate to WalletService])
+    R --> S[toAmount = Decimal amount × rate]
+    S --> T([Proceed with wallet debit/credit])
+```
+
+---
+
 ## API Endpoints
 
 All routes are prefixed with `/v1`. Protected routes require `Authorization: Bearer <token>`.
